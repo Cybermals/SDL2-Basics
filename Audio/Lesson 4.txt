@@ -1,0 +1,114 @@
+Lesson 4: Loading and Playing Audio
+===================================
+
+ In this lesson we are going to add sound effects to our app. We will start by 
+including the SDL2_mixer header:
+
+#include <SDL2/SDL_mixer.h>
+
+ We will also need some new globals:
+ 
+int haveAudio = TRUE;
+Mix_Chunk *poppingBubbleSnd = NULL;
+
+ "haveAudio" will be set to TRUE if audio is supported on the device and it will be
+set to FALSE otherwise. "poppingBubbleSnd" will contain the sound effect we will play
+when a bubble pops. Next, we will add some new lines to our "Init" function:
+
+//Init SDL2_mixer
+SDL_Log("%s", "Initializing SDL2_mixer...");
+    
+if(Mix_Init(MIX_INIT_OGG) != MIX_INIT_OGG)
+{
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+    haveAudio = FALSE;
+}
+
+ The "Mix_Init" function is used to initialize SDL2_mixer. The first and only 
+parameter indicates what types of audio files we want support for. The function
+returns the same value that we passed as the first parameter if it succeeds. Next we
+will need to open an audio device:
+
+//Open audio device
+if(haveAudio)
+{
+    SDL_Log("%s", "Opening audio device...");
+    
+    if(Mix_OpenAudio(MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 4096) == -1)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        haveAudio = FALSE;
+    }
+}
+
+ First off, we only need to open an audio device if audio initialization succeeded.
+The "Mix_OpenAudio" function is used to open an audio device. The function takes 4
+parameters. The first is the frequency, the second is the audio format, the third is
+the number of channels, and the fourth is the buffer size. If the function fails it
+will return -1. If audio is supported, we will next initialize the audio for our app:
+
+//Load audio files
+if(haveAudio)
+{
+    InitAudio();
+}
+
+ Let's take a look at our new "InitAudio" function next:
+ 
+void InitAudio(void)
+{
+    //Load popping bubble sound effect
+    poppingBubbleSnd = Mix_LoadWAV("data/sounds/popping-bubble.ogg");
+    
+    if(!poppingBubbleSnd)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+    }
+}
+
+ The "Mix_LoadWAV" function is used to load a sound effect file. It is capable of
+loading simple WAV files or other formates like OGG. If it succeeds, it returns a
+pointer to a Mix_Chunk. Otherwise it returns NULL. Next we are going to create a
+new function that is used to pop a bubble. It will replace the parts of our code
+where we previously just set the bubble texture and hp for its popping state:
+
+void PopBubble(Bubble *bubble)
+{
+    bubble->tex = poppingBubbleTex;
+    bubble->hp = -30;
+    
+    if(haveAudio && poppingBubbleSnd)
+    {
+        Mix_PlayChannel(-1, poppingBubbleSnd, 0);
+    }
+}
+
+ If audio is supported and our popping bubble sound effect were successfully
+initialized, we will call "Mix_PlayChannel" to play the sound effect. It takes 3
+parameters. The first is the channel to play the sound effect on, the second is the
+sound effect to play, and the third is the number of times to repeat the sound effect.
+If the channel is -1, the first available mixer channel will be used to play the
+sound effect. We will also need to make sure that we free our sound effect, close the 
+audio device, and quit SDL2_mixer on exit:
+
+//Free audio data
+Mix_HaltChannel(-1);
+    
+if(poppingBubbleSnd)
+{
+    Mix_FreeChunk(poppingBubbleSnd);
+}
+
+//Close audio device
+if(haveAudio)
+{
+    Mix_CloseAudio();
+}
+
+ "Mix_HaltChannel" is used to stop playing a given audio channel. -1 means all 
+channels. "Mix_FreeChunk" is used to free a given sound effect. And "Mix_CloseAudio"
+is used to close the audio device. We also need to call "Mix_Quit":
+
+Mix_Quit();
+
+ In the next lesson, we will learn to draw text.

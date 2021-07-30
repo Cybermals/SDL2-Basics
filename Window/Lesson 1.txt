@@ -1,0 +1,192 @@
+Lesson 1: Creating a Window
+===========================
+
+ In this tutorial series, I will teach you how to create multimedia applications with
+SDL2. SDL2 is version 2 of the Simple Direct Media Layer library. It is cross-platform
+multimedia library that can create windows, load images, load audio files, draw 
+graphics, play audio, and more. It works on Windows, Linux, Mac OS, Android, and a few
+other operating systems. Let's get started.
+ The first thing we need to create is a window. SDL2 allows you to have one or more
+windows and draw in them. First we must include some header files:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <SDL2/SDL.h>
+
+ The "SDL.h" header automatically includes all the other SDL2 headers. Let's define
+some convenience macros too:
+
+#ifndef TRUE
+    #define TRUE  1
+    #define FALSE 0
+#endif
+
+#define SDL_INIT_FLAGS    (SDL_INIT_EVENTS | SDL_INIT_TIMER | SDL_INIT_VIDEO)
+#define APP_TITLE         "SDL2 Window"
+#define WINDOW_X          SDL_WINDOWPOS_CENTERED
+#define WINDOW_Y          SDL_WINDOWPOS_CENTERED
+#define WINDOW_WIDTH      800
+#define WINDOW_HEIGHT     600
+
+#ifdef __ANDROID__
+    #define WINDOW_FLAGS  SDL_WINDOW_FULLSCREEN
+#else
+    #define WINDOW_FLAGS  0
+#endif
+
+#define FPS               60
+#define TARGET_FRAME_TIME (1000 / FPS)
+
+ Since some compilers don't automatically define TRUE and FALSE, we will define them
+ourselves if they don't exist. "SDL_INIT_FLAGS" is going to the be the flags we will
+pass to "SDL_Init" in order to initialize SDL2. For this tutorial, we will only need
+to initialize events, timers, and video. We will also define macros for our app title,
+window pos, window size, window flags, framerate, and target frame time. Notice that
+our window flags differ on Android. This is because we want our app to run fullscreen
+on Android. The framerate is how many times per second we will update our window. The
+target frame time is the amount of time that it should take to render each frame. We
+will also need some globals:
+
+SDL_Window *window = NULL;
+SDL_Renderer *renderer = NULL;
+
+int startTime = 0;
+int endTime = 0;
+int frameTime = 0;
+
+ "window" is a pointer to our window, "renderer" is a pointer to the renderer that we
+will use to draw in our window, "startTime" is the time when we started rendering the
+last frame, "endTime" is the time when we finished rendering the last frame, 
+"frameTime" is the time it took to render the last frame. Now let's take a look at our
+"main" function:
+
+//Init SDL2
+SDL_Log("%s", "Initializing SDL2...");
+    
+if(SDL_Init(SDL_INIT_FLAGS) == -1)
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+    return 1;
+}
+    
+atexit(&Quit);
+
+ The "SDL_Log" function writes to the application log. We will be using it to log
+important events. "SDL_LogError" is used to log errors. Before we can use SDL2, we
+must call "SDL_Init" to initialize the subsystems we want to use. This function takes
+a series of flags as its first and only parameter and it returns 0 if it succeeds or
+-1 if it fails. Once we have initialized SDL2, we register our "Quit" function to be
+called when our app exits. We will take a closer look at it later. Let's take a look
+at the next part:
+
+//Create a window
+SDL_Log("%s", "Creating a window and renderer...");
+    
+if(SDL_CreateWindowAndRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_FLAGS, 
+    &window, &renderer) == -1)
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+    return 1;
+}
+    
+SDL_SetWindowTitle(window, APP_TITLE);
+SDL_SetWindowPosition(window, WINDOW_X, WINDOW_Y);
+    
+ The "SDL_CreateWindowAndRenderer" function is used to create a window and renderer in
+a single function call. We could have create the window and renderer separately via
+"SDL_CreateWindow" and "SDL_CreateRenderer", however this time we will do it with a
+single function. The "SDL_CreateWindowAndRenderer" function takes 5 parameters. The
+first is the width of the window, the second is the height of the window, the third
+is the window flags, the fourth is a pointer to the variable that will receive the
+window pointer, and the fifth is a pointer to the variable that will receive the
+renderer pointer. If the function succeeds, it returns 0. Otherwise, it returns -1.
+Once we have created a window, we can set it's title with "SDL_SetWindowTitle". This
+function takes 2 parameters. The window and it's new title. Then we can use
+"SDL_SetWindowPosition" to set the window position. This function takes 3 parameters.
+The window, it's new x-coordinate, and it's new y-coordinate. Note that on Android,
+setting window position and size are both ignored. Therefore, the actual window size
+may not be what we requested. We will learn how to account for this issue in the next
+lesson. Now let's take a look inside our main loop:
+
+//Process pending events
+SDL_Event event;
+        
+while(SDL_PollEvent(&event))
+{
+    //Handle the next event
+    switch(event.type)
+    {
+        //Quit event
+    case SDL_QUIT:
+        return 0;
+    }
+}
+
+ We will start each frame by processing all pending events. We will need an 
+"SDL_Event" union to store the next event from the event queue. The "SDL_PollEvent"
+function is used to fetch the next event in the application event queue. It takes a
+pointer to our event union and returns TRUE if it fetched an event. We can then use
+a switch block to handle the event based on its type. If the event is "SDL_QUIT", we
+will return from our main function which will terminate the program. Let's see what's
+next:
+
+//Clear the window
+SDL_SetRenderDrawColor(renderer, 0, 128, 255, 255);
+SDL_RenderClear(renderer);
+
+ Clearing the window should always be the first thing we do each frame. The
+"SDL_SetRenderDrawColor" function sets the color that will be used for the proceeding
+drawing functions. It takes 5 parameters. The renderer, red, green, blue, and alpha.
+Usually the color will be transparent black, however we will use light blue for this
+lesson to make it easier to see if our program is working correctly. The 
+"SDL_RenderClear" function clears the window associated with the given renderer.
+Let's see what's next:
+
+//Swap buffers
+SDL_RenderPresent(renderer);
+endTime = SDL_GetTicks();
+frameTime = endTime - startTime;
+startTime = endTime;
+
+ After we have drawn in our window, we will need to swap buffers before it will be
+visible. The "SDL_RenderPresent" function will swap the window associated with the
+given renderer. Then we will get the end time, calculate the frame time, and set
+the new start time to the previous end time. I bet you are wondering why we are doing
+this. Let's look at the next part and I will explain:
+
+//Limit framerate to 60 fps.
+if(frameTime < TARGET_FRAME_TIME)
+{
+    SDL_Delay(TARGET_FRAME_TIME - frameTime);
+}
+
+ If we don't limit the framerate of our app, it will run as fast as the OS and
+hardware will allow it to run. However, that will also cause the CPU usage to stay
+pegged at 100% which will produce more heat and use more power. Therefore, we need
+to limit the framerate. If the frame time was less than the target frame time, we
+simply calculate the difference and use the "SDL_Delay" function to make our app
+sleep for the remaining time for the current frame. Now let's look at our "Quit"
+function:
+
+void Quit(void)
+{
+    //Destroy renderer and window
+    if(renderer)
+    {
+        SDL_DestroyRenderer(renderer);
+    }
+    
+    if(window)
+    {
+        SDL_DestroyWindow(window);
+    }
+    
+    //Quit SDL2
+    SDL_Quit();
+}
+
+ The "Quit" function is pretty simple. It just destroys any existing renderer and
+window. Then it quits SDL2.
+ In the next lesson, we will learn how to load and draw images.

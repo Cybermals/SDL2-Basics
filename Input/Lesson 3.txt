@@ -1,0 +1,474 @@
+Lesson 3: Getting User Input
+============================
+
+ In this lesson, we are going to make our app interactive by getting user input. We
+are also going to add more bubbles and have them interact with each other as well.
+Let's start by adding a new type of object to our game:
+
+typedef struct
+{
+    SDL_Texture *tex;
+    SDL_Rect rect;
+} Pin;
+
+ The basic idea is that we will have a pin that is moved by the user and pops the
+bubbles by touching them. The bubbles will also pop after bouncing off each other a
+set number of times. So we will also need to improve our bubble structure:
+
+typedef struct
+{
+    SDL_Texture *tex;
+    SDL_Rect rect;
+    SDL_FPoint pos;
+    SDL_FPoint velocity;
+    int hp;
+} Bubble;
+
+ I have added 2 new members called "pos" and "hp". I have also changed "velocity" to
+an "SDL_FPoint". Here's why. A normal point or rect is only capable of storing
+integer values. An FPoint or FRect is capable of storing decimal values. This means
+that we can have more precision for our math calculations. However, SDL2's collision
+detection functions do not support FRect objects. Which is why we will keep a normal
+rect for rendering and collision detection. We will need some more globals too:
+
+SDL_Texture *pinTex = NULL;
+Pin pin;
+
+int spawnTmr = 60;
+SDL_Texture *bubbleTex = NULL;
+SDL_Texture *poppingBubbleTex = NULL;
+SDL_Rect bubbleRect;
+Bubble bubbles[10];
+
+ "pinTex" will be the texture for a pin, "pin" will be our pin, "spawnTmr" will be
+used to determine when we should spawn another bubble. "bubbleTex" is our original
+bubble texture, "poppingBubbleTex" is the texture for a popping bubble, "bubbleRect"
+is the initial rect for a bubble, and "bubbles" is an array of bubble objects. Since
+our program is growing more complex, I am also going to separate more of our code
+into individual functions. Let's take a look at our new "main" function:
+
+//Init
+if(Init())
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", 
+        "Failed to initialize app.");
+    return 1;
+}
+
+ I have moved all the initialization code to a function called "Init". That function
+will return 0 on success or 1 on failure. This makes the beginning of our "main"
+function a lot cleaner. In order to handle user input, we will need some new event
+handling code:
+
+    //Mouse Button Down Event
+case SDL_MOUSEBUTTONDOWN:
+    ShowPin(TRUE);
+    SetPinPos(event.button.x, event.button.y);
+    break;
+                
+    //Mouse Button Up Event
+case SDL_MOUSEBUTTONUP:
+    ShowPin(FALSE);
+    break;
+                
+    //Mouse Motion Event
+case SDL_MOUSEMOTION:
+    SetPinPos(event.motion.x, event.motion.y);
+    break;
+    
+ Basically, we want to show the pin when the user presses the mouse button, hide the
+pin when they release the mouse button, and update the pin position when the user
+moves the mouse. This also works on a touch device by detecting a touch/drag/release.
+Let's look at our new render code:
+
+//Update pin
+UpdatePin();
+        
+//Update bubbles
+SpawnBubble();
+        
+for(int i = 0; i < sizeof(bubbles) / sizeof(bubbles[0]); i++)
+{
+    UpdateBubble(&bubbles[i]);
+}
+
+ We start by updating the pin. Then we try to spawn a new bubble. And afterward, we
+update all the bubbles. As you can see, using more functions makes our code a lot
+cleaner. Now let's take a closer look at these new functions:
+
+int Init(void)
+{
+    //Init SDL2
+    SDL_Log("%s", "Initializing SDL2...");
+    
+    if(SDL_Init(SDL_INIT_FLAGS) == -1)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return 1;
+    }
+    
+    atexit(&Quit);
+    
+    //Init SDL2_image
+    SDL_Log("%s", "Initializing SDL2_image...");
+    
+    if(IMG_Init(IMG_INIT_PNG) != IMG_INIT_PNG)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return 1;
+    }
+    
+    //Create a window
+    SDL_Log("%s", "Creating a window and renderer...");
+    
+    if(SDL_CreateWindowAndRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_FLAGS, 
+        &window, &renderer) == -1)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return 1;
+    }
+    
+    SDL_SetWindowTitle(window, APP_TITLE);
+    SDL_SetWindowPosition(window, WINDOW_X, WINDOW_Y);
+    
+    #ifdef __ANDROID__
+    SDL_Rect screen;
+    SDL_GetDisplayUsableBounds(0, &screen);
+    windowSize.x = screen.w;
+    windowSize.y = screen.h;
+    #else
+    SDL_GetWindowSize(window, &windowSize.x, &windowSize.y);
+    #endif
+    
+    //Init random numbers
+    srand(time(0));
+    
+    //Init pin
+    if(InitPin())
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s",
+            "Failed to initialize pin.");
+        return 1;
+    }
+    
+    //Init bubbles
+    if(InitBubbles())
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s",
+            "Failed to initialize bubbles.");
+        return 1;
+    }
+    
+    return 0;
+}
+
+ As you can see, our "Init" function starts with the initialization code that used to
+be in our "main" function. Let's look at the new parts:
+
+//Init random numbers
+srand(time(0));
+
+ For this lesson, we are going to randomize the velocity of each bubble. Doing so will
+make this app more interesting. But before we can use random numbers, we must seed the
+random number generator. If we forget to do so, we will get the same sequence of
+random numbers every time. It is a good idea to use the current time as the seed to
+help make things more random. The "time" function from the "time.h" header is great
+for this purpose. Let's see what's next:
+
+//Init pin
+if(InitPin())
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s",
+    "Failed to initialize pin.");
+    return 1;
+}
+    
+//Init bubbles
+if(InitBubbles())
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s",
+        "Failed to initialize bubbles.");
+    return 1;
+}
+    
+return 0;
+
+ The "InitPin" and "InitBubbles" functions initialize the pin and bubbles 
+respectively. They return the same values as "Init". Let's take a look at "InitPin":
+
+int InitPin(void)
+{
+    //Load pin texture
+    pinTex = LoadImage("data/images/pin.png", &pin.rect);
+    
+    if(!pinTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s",
+            "Failed to load pin texture.");
+        return 1;
+    }
+    
+    pin.rect.w *= 2;
+    pin.rect.h *= 2;
+    return 0;
+}
+
+ This function is quite simple. We just load the pin texture and double it's size.
+Let's look at "InitBubbles" now:
+
+int InitBubbles(void)
+{
+    //Initialize bubbles array
+    memset(bubbles, 0, sizeof(bubbles));
+    
+    //Load bubble textures
+    bubbleTex = LoadImage("data/images/bubble.png", &bubbleRect);
+    
+    if(!bubbleTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", 
+            "Failed to load bubble textures.");
+        return 1;
+    }
+    
+    bubbleRect.w *= 2;
+    bubbleRect.h *= 2;
+    poppingBubbleTex = LoadImage("data/images/popping-bubble.png", NULL);
+    
+    if(!poppingBubbleTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", 
+            "Failed to load bubble textures.");
+        return 1;
+    }
+    
+    return 0;
+}
+
+ We use the "memset" function to quickly clear the "bubbles" array. It takes 3
+parameters. The array, the value to fill it with, and the number of bytes to write.
+The "sizeof" function returns the size of a variable. After we initialize the
+"bubbles" array, we will load the 2 bubble textures. Now let's look at the 3 pin
+functions:
+
+void SetPinPos(int x, int y)
+{
+    pin.rect.x = x;
+    pin.rect.y = y;
+}
+
+
+void ShowPin(int doShow)
+{
+    //Show the pin?
+    if(doShow)
+    {
+        pin.tex = pinTex;
+    }
+    //Hide the pin?
+    else
+    {
+        pin.tex = NULL;
+    }
+}
+
+
+void UpdatePin(void)
+{
+    //Is the pin visible?
+    if(!pin.tex)
+    {
+        return;
+    }
+    
+    //Render the pin
+    SDL_RenderCopy(renderer, pin.tex, NULL, &pin.rect);
+}
+
+ Setting the pin position is as simple as setting the x and y members of it's
+rectangle. To show the pin, we set its texture to the pin texture. To hide it, we set
+its texture to NULL. When we call "UpdatePin", if the pin has a texture, we will
+simply copy it to the window. Now let's look at how spawning bubbles works:
+
+void SpawnBubble(void)
+{
+    //Update spawn timer
+    if(spawnTmr--)
+    {
+        return;
+    }
+    
+    //Reset spawn timer
+    spawnTmr = 60;
+    
+    //Spawn a bubble
+    for(int i = 0; i < sizeof(bubbles) / sizeof(bubbles[0]); i++)
+    {
+        Bubble *bubble = &bubbles[i];
+        
+        if(bubble->tex)
+        {
+            continue;
+        }
+        
+        bubble->tex = bubbleTex;
+        memcpy(&bubble->rect, &bubbleRect, sizeof(bubbleRect));
+        bubble->pos.x = randint(0, windowSize.x - bubbleRect.w);
+        bubble->pos.y = randint(0, windowSize.y - bubbleRect.h);
+        bubble->velocity.x = cos(radians(randint(0, 360)));
+        bubble->velocity.y = sin(radians(randint(0, 360)));
+        bubble->hp = 100;
+        return;
+    }
+}
+
+ We start by subtracting one from the spawn timer. If it is zero, we will reset it and
+try to spawn a bubble. In order to spawn a bubble, there has to be a free slot in our
+"bubbles" array. A free slot will have a NULL texture. If we find a free slot, we will
+initialize it by setting its texture, initializing its rectangle, setting it's 
+position randomly, setting its velocity randomly, and setting its hp to 100. Then we
+simply return. The "sin" and "cos" functions are defined in "math.h" and they both
+take radians as a parameter, not degrees. Let's take a look at our utility functions 
+"randint" and "radians":
+
+int randint(int min, int max)
+{
+    return min + (rand() % (max - min));
+}
+
+
+float radians(float degrees)
+{
+    return degrees * (M_PI / 180.0f);
+}
+
+ "randint" returns a random integer between "min" and "max". It works by calling
+"rand" to get a random number. Then it calculates the remainder obtained by dividing
+the random number by the difference between "min" and "max". And it then adds that
+number to "min" and returns it. "radians" converts a value in degrees to a value in
+radians by multiplying it by pi divided by 180 degrees. Now let's see how a bubble
+gets updated:
+
+void UpdateBubble(Bubble *bubble)
+{
+    //Does this bubble exist?
+    if(!bubble->tex || !bubble->hp)
+    {
+        return;
+    }
+    //Is this bubble popped?
+    else if(bubble->hp < 0)
+    {
+        if(++bubble->hp == 0)
+        {
+            bubble->tex = NULL;
+            return;
+        }
+    }
+    //Is this bubble active?
+    else
+    {
+        //Do collision detection
+        if(pin.tex && SDL_HasIntersection(&bubble->rect, &pin.rect))
+        {
+            bubble->tex = poppingBubbleTex;
+            bubble->hp = -30;
+        }
+        else
+        {
+            for(int i = 0; i < sizeof(bubbles) / sizeof(bubbles[0]); i++)
+            {
+                Bubble *bubble2 = &bubbles[i];
+            
+                //Don't check collision between a bubble and itself or with a bubble
+                //that doesn't exist.
+                if(bubble == bubble2 || !bubble2->tex || bubble2->hp <= 0)
+                {
+                    continue;
+                }
+        
+                //Have the bubbles collided
+                SDL_Point p1;
+                SDL_Point p2;
+                center(&p1, &bubble->rect);
+                center(&p2, &bubble2->rect);
+            
+                int dx = p2.x - p1.x;
+                int dy = p2.y - p1.y;
+            
+                if(sqrt((float)(dx * dx + dy * dy)) < 
+                    bubble->rect.w / 2 + bubble2->rect.h / 2)
+                {
+                    bubble->velocity.x = -bubble->velocity.x;
+                    bubble->velocity.y = -bubble->velocity.y;
+            
+                    if(--bubble->hp == 0)
+                    {
+                        bubble->tex = poppingBubbleTex;
+                        bubble->hp = -30;
+                    }
+            
+                    bubble2->velocity.x = -bubble2->velocity.x;
+                    bubble2->velocity.y = -bubble2->velocity.y;
+            
+                    if(--bubble2->hp == 0)
+                    {
+                        bubble2->tex = poppingBubbleTex;
+                        bubble2->hp = -30;
+                    }
+                }
+            }
+        }
+    
+        //Update pos and velocity
+        bubble->pos.x += bubble->velocity.x;
+        bubble->pos.y += bubble->velocity.y;
+    
+        if(bubble->pos.x < 0 || bubble->pos.x + bubble->rect.w > windowSize.x)
+        {
+            bubble->velocity.x = -bubble->velocity.x;
+        }
+    
+        if(bubble->pos.y < 0 || bubble->pos.y + bubble->rect.h > windowSize.y)
+        {
+            bubble->velocity.y = -bubble->velocity.y;
+        }
+    
+        bubble->rect.x = bubble->pos.x;
+        bubble->rect.y = bubble->pos.y;
+    }
+    
+    //Draw the bubble
+    SDL_RenderCopy(renderer, bubble->tex, NULL, &bubble->rect);
+}
+
+ First off, we skip bubbles that have no texture or no hp. If the bubble has less than
+0 hp, it is popping and we will add one to its hp. If its hp becomes 0, we will set
+its texture to NULL and return. But if the bubble still has hp, we will start by
+checking if it has collided with the pin. A bubble has collided with the pin if the
+pin is visible and the rects of the 2 objects are intersecting. We can use
+"SDL_HasIntersection" to check if 2 rectangles are intersecting. If the pin and
+bubble are touching, we will set the bubble's texture to the popping texture and set
+its hp to -30. Otherwise, we will go through all the bubbles and check if each bubble
+has collided with the current one. Notice that we do not check for collision with a
+bubble if it is the same bubble, has no texture, or has hp less than or equal to 0.
+However, we do have a bit of an issue to adress here. Since a bubble is round, we
+cannot use "SDL_HasIntersection". The reason is because that function would detect
+collisions if the transparent "corners" of the bubble texture were touching. So
+instead, we will do circle-based collision detection. We start by getting the center
+of each bubble. Then we calculate the x and y displacement. And if the square root of
+dx squared plus dy squared is less than the sum of the radii of both bubbles, we know
+they are touching. Notice that we can calculate the radius of a bubble as half its
+width or height as long as both dimensions are equal. If the 2 bubbles have collided,
+we will invert their velocity and decrease their hp by 1. Afterward, we will update
+the bubble like before and draw it. Let's take a look at our "center" function:
+
+void center(SDL_Point *center, const SDL_Rect *rect)
+{
+    center->x = rect->x + rect->w / 2;
+    center->y = rect->y + rect->h / 2;
+}
+
+ This function calculates the center of a rectangle by adding half its width to the
+x-coordinate and half its height to the y-coordinate.
+ In the next lesson, we will add some sound effects to our app.

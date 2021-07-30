@@ -1,0 +1,166 @@
+Lesson 5: Loading Fonts and Drawing Text
+========================================
+
+ In this lesson, we will learn how to load fonts and draw text. First we will need to
+include the "SDL2_ttf" header:
+
+#include <SDL2/SDL_ttf.h>
+
+ We will also define a macro for the font size:
+ 
+#define FONT_SIZE         32
+
+ And we will also need some new globals:
+ 
+int score = 0;
+ 
+SDL_Color textColor = {255, 255, 255, 255};
+char textBuf[256];
+TTF_Font *font = NULL;
+SDL_Texture *textOverlayTex = NULL;
+
+ "textColor" is the color we will use to render our text, "textBuf" is a temporary
+buffer we will use to compose the text to render, "font" will be a pointer to the
+font we will be using, and "textOverlayTex" will be the texture we will render our
+text on. We will also add a forward declaration for our score updating function:
+
+void UpdateScore(int inc);
+
+ We will need to initialize SDL2_ttf in our "Init" function:
+ 
+//Init SDL2_ttf
+SDL_Log("%s", "Initializing SDL2_ttf...");
+    
+if(TTF_Init() == -1)
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+    return 1;
+}
+
+ The "TTF_Init" function initializes SDL2_ttf. It returns -1 if it fails. We will also
+need to initialize our fonts:
+
+//Init fonts
+if(InitFonts())
+{
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", 
+        "Failed to initialize fonts.");
+    return 1;
+}
+
+ Let's take a look at our new "InitFonts" function:
+ 
+int InitFonts(void)
+{
+    //Load fonts
+    font = TTF_OpenFont("data/fonts/Oxanium-Regular.ttf", FONT_SIZE);
+    
+    if(!font)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return 1;
+    }
+    
+    //Create text overlay
+    textOverlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR32,
+        SDL_TEXTUREACCESS_STREAMING, windowSize.x, windowSize.y);
+        
+    if(!textOverlayTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return 1;
+    }
+    
+    SDL_SetTextureBlendMode(textOverlayTex, SDL_BLENDMODE_BLEND);
+    UpdateScore(0);
+    return 0;
+}
+
+ The "TTF_OpenFont" function is used to load a TrueType font file. It takes 2
+parameters. The first is the path to the font file and the second is the font size
+to use. If it succeeds, it will return a pointer to the loaded font. Otherwise it will
+return NULL. Next we will need to create a texture for our text overlay. The
+"SDL_CreateTexture" function creates a new texture. It takes 5 parameters. The first
+is our renderer, the second is the pixel format, the third is flags indicating what
+type of texture to create, the fourth and fifth parameters indicate the texture size.
+If the function fails, it returns NULL. Otherwise it returns a texture pointer. Once
+we have created our text overlay texture, we will need to set the blend mode so that
+the blank parts of the texture don't get drawn. We will also need to draw the initial
+score on the texture. Let's take a look at our new "UpdateScore" function:
+
+void UpdateScore(int inc)
+{
+    //Update the score counter
+    score += inc;
+    
+    //Render text
+    SDL_snprintf(textBuf, sizeof(textBuf), "Score: %i", score);
+    SDL_Surface *text = TTF_RenderText_Solid(font, textBuf, textColor);
+    
+    if(!text)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        return;
+    }
+    
+    //Update text overlay
+    SDL_Surface *textOverlay;
+    
+    if(SDL_LockTextureToSurface(textOverlayTex, NULL, &textOverlay) == -1)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
+        SDL_FreeSurface(text);
+        return;
+    }
+    
+    memset(textOverlay->pixels, 0, textOverlay->pitch * textOverlay->h);
+    SDL_Rect dest = {0, 0, text->w, text->h};
+    SDL_BlitSurface(text, NULL, textOverlay, &dest);
+    SDL_UnlockTexture(textOverlayTex);
+    SDL_FreeSurface(text);
+}
+
+ First we add the given increment to the current score. Then we need to compose the
+new score text. The "SDL_snprintf" function takes a buffer, buffer size, format
+string, and one additional parameter for each placeholder code in the format string.
+It then writes the formatted text into the given buffer. Next we will render the new
+score text by calling "TTF_RenderText_Solid". This function takes 3 parameters. The
+font, the text, and the text color. It then returns a surface with the rendered text
+or NULL if it fails. In order to get the text onto our text overlay texture, we will
+first need to map it to a surface by calling "SDL_LockTextureToSurface". This function
+takes 3 parameters. The first is our text overlay texture, the second is the
+rectangular area to map, and the third is a pointer to the variable that will receive
+the resulting surface. If the second parameter is NULL, the entire texture will be
+mapped. If the function fails, it will return -1 and we will free the text surface.
+Next we will need to clear the text overlay. We can quickly do this by simply setting
+all the pixel bytes to 0 with "memset". Then we will blit our text surface to our
+texture with "SDL_BlitSurface". This function takes 4 parameters. The first is the
+source surface, the second is the source rectangle, the third is the destination
+surface, and the fourth is the destination rectangle. If either rectangle is NULL, it
+means that the whole surface will be used. Afterward, we simply unlock our text
+overlay texture and free our text surface. We will need to add a call to "UpdateScore"
+inside our "UpdateBubble" function that will update the score when the pin pops a
+bubble:
+
+UpdateScore(100);
+
+ And we will need to draw our text overlay each frame after we have drawn the pin
+and bubbles:
+
+//Draw HUD
+SDL_RenderCopy(renderer, textOverlayTex, NULL, NULL);
+
+ And we must also remember to free our font and quit SDL_ttf in our "Quit" function:
+ 
+//Free fonts
+if(font)
+{
+    TTF_CloseFont(font);
+}
+
+...
+
+TTF_Quit();
+
+ The "TTF_CloseFont" function is used to close an open font and "TTF_Quit" is used to
+quit SDL_ttf.
